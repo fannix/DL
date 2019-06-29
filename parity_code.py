@@ -54,7 +54,7 @@ parity_check = ParityCheck()
 sgd = optim.Adam(parity_check.parameters())
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(50):
+for epoch in range(500):
 
     for i, seq in enumerate(seq_li[:1]):
         sgd.zero_grad()
