@@ -56,9 +56,8 @@ class Decoder(nn.Module):
     def __init__(self, embed_size, hidden_size):
         super(Decoder, self).__init__()
         self.embedding = nn.Embedding(len(vocab.stoi), embed_size)
-        self.lstm=nn.GRU(embed_size, hidden_size)
+        self.lstm = nn.GRU(embed_size, hidden_size)
         self.linear = nn.Linear(hidden_size, len(vocab.stoi))
-        self.init_context()
     
     def forward(self, x):
         encoding = self.embedding(x).view(len(x), 1, -1)
@@ -68,6 +67,8 @@ class Decoder(nn.Module):
         return output
 
     def init_context(self, context = None):
+        # only use the last hidden state for vanilla decoder
+        context = context[-1].view(1, 1, -1)
         self.context = context
 
 
@@ -79,8 +80,8 @@ class EncodeDecoder(nn.Module):
         self.decoder = decoder
     
     def forward(self, x):
-        encoded = self.encoder(x)[-1]
-        self.decoder.init_context(encoded.view(1, 1, -1))
+        encoded = self.encoder(x)
+        self.decoder.init_context(encoded)
 
         prev_token = torch.LongTensor([0])
 
@@ -93,8 +94,46 @@ class EncodeDecoder(nn.Module):
         return output
 
 
+class AttentionDecoder(nn.Module):
+
+    def __init__(self, embed_size, hidden_size):
+        super(AttentionDecoder, self).__init__()
+        self.embedding = nn.Embedding(len(vocab.stoi), embed_size)
+        self.attn = nn.Linear(embed_size + hidden_size,
+                              len(train_seq_tensor_li[0]))
+        self.attn_combine = nn.Linear(embed_size + hidden_size, embed_size)
+        self.hidden_size = hidden_size
+        self.lstm = nn.GRU(embed_size, hidden_size)
+        self.linear = nn.Linear(hidden_size, len(vocab.stoi))
+
+
+    def forward(self, x):
+        encoding = self.embedding(x).view(len(x), 1, -1)
+
+        # get attention weight and apply it
+        input_context = torch.cat((encoding, self.context), 2)
+        attn_weight = torch.softmax(self.attn(input_context), 2)
+        attn_applied = torch.bmm(
+            attn_weight, self.encoder_output.view(1, -1, self.hidden_size))
+
+        # combine attention with input
+        input_attn = torch.cat((encoding, attn_applied), 2)
+        attn_combined = self.attn_combine(input_attn)
+
+        # Use modified input as the new input
+        # hidden state is unmodified
+        lstm, self.context = self.lstm(attn_combined, self.context)
+        output = self.linear(lstm)
+
+        return output
+    
+    def init_context(self, context = None, seq_len=10):
+        self.encoder_output = context.view(seq_len, 1, -1)
+        self.context = self.encoder_output[-1].unsqueeze(0)
+
+
 encoder = Encoder(8, 4)
-decoder = Decoder(8, 4)
+decoder = AttentionDecoder(8, 4)
 endecoder = EncodeDecoder(encoder, decoder)
 
 criterion = nn.CrossEntropyLoss()
@@ -103,8 +142,8 @@ decode_optimizer = optim.Adam(decoder.parameters())
 for epoch in range(5001):
     encode_optimizer.zero_grad()
     decode_optimizer.zero_grad()
-    output = endecoder(train_seq_tensor_li[0])
-    loss = criterion(output, train_rev_tensor_li[0])
+    output = endecoder(train_seq_tensor_li[1])
+    loss = criterion(output, train_rev_tensor_li[1])
     if epoch % 100 == 0:
         print(f"{epoch}", loss.item())
     loss.backward()
