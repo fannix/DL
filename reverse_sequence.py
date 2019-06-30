@@ -7,6 +7,7 @@ import torchtext
 from collections import Counter
 import random
 import string
+from torch.utils.tensorboard import SummaryWriter
 random.seed(0)
 
 def generate_seq(len=10):
@@ -136,16 +137,24 @@ encoder = Encoder(8, 4)
 decoder = AttentionDecoder(8, 4)
 endecoder = EncodeDecoder(encoder, decoder)
 
+writer = SummaryWriter()
 criterion = nn.CrossEntropyLoss()
 encode_optimizer = optim.Adam(encoder.parameters())
 decode_optimizer = optim.Adam(decoder.parameters())
-for epoch in range(5001):
-    encode_optimizer.zero_grad()
-    decode_optimizer.zero_grad()
-    output = endecoder(train_seq_tensor_li[1])
-    loss = criterion(output, train_rev_tensor_li[1])
-    if epoch % 100 == 0:
-        print(f"{epoch}", loss.item())
-    loss.backward()
-    encode_optimizer.step()
-    decode_optimizer.step()
+for epoch in range(51):
+    print(epoch)
+    for i, seq in enumerate(train_seq_tensor_li):
+
+        encode_optimizer.zero_grad()
+        decode_optimizer.zero_grad()
+
+        output = endecoder(seq)
+        loss = criterion(output, train_rev_tensor_li[i])
+        if i % 10 == 0:
+            print(f"{epoch} {i}", loss.item())
+            # writer.add_scalar(f'data/loss{epoch}', loss, i)
+        loss.backward()
+        encode_optimizer.step()
+        decode_optimizer.step()
+
+writer.close()
